@@ -7,6 +7,7 @@ import (
     "time"
     "fmt"
     "os"
+    "math/rand"
 )
 
 
@@ -30,7 +31,7 @@ func insertStateIntoDatabase(state int) int64 {
 
     id, err := res.LastInsertId()
     checkErr(err)
-    if debug {fmt.Printf("Database returned ID %v", id)}
+    if debug {fmt.Printf("Database returned ID %v\n", id)}
     db.Close()
     return id
 }
@@ -54,8 +55,8 @@ func setupLocalDatabase() {
 var remoteServerAddress string = "192.168.0.106"
 
 func setupWebsocket() {
-    if debug{fmt.Println("Attempting to establish a websocket")}
-    if debug{fmt.Printf("Remote Server = %v",remoteServerAddress)}
+    if debug{fmt.Println("Attempting to establish a websocket\n")}
+    if debug{fmt.Printf("Remote Server = %v\n",remoteServerAddress)}
 }
 
 /////////////////////////////////////////////////////////////
@@ -64,7 +65,8 @@ func setupWebsocket() {
 //
 /////////////////////////////////////////////////////////////
 
-var debug bool = false
+var debug bool = true
+var emulate bool = true
 
 func changedState(state int) {
     insertStateIntoDatabase(state)
@@ -85,8 +87,9 @@ func checkErr(err error) {
 
 func main() {
 
-    cec.Open("", "cec.go")
-    var previousState int = 5
+    if !emulate {cec.Open("", "cec.go")}
+    previousState := 5
+    state := 0
 
     // Initial Startup tasks
     setupWebsocket()
@@ -94,12 +97,14 @@ func main() {
 
     // Check the TV state every second
     for {
-        state := cec.GetDevicePowerStatus(0)
-        if debug {fmt.Print(state)}
+        if !emulate {state = cec.GetDevicePowerStatus(0)}
+        if emulate {state = rand.Intn(2)}
+        if debug {fmt.Printf("The TV is %v\n", state)}
         if state != previousState {
             go changedState(state)
         }
         previousState = state
-        time.Sleep(1 * time.Second)    
+        time.Sleep(1 * time.Second)
+        if emulate {time.Sleep(4 * time.Second)}
     }
 }
