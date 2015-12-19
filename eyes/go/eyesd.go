@@ -10,6 +10,7 @@ import (
     "math/rand"
     "net"
     "strconv"
+    "encoding/json"
 )
 
 /////////////////////////////////////////////////////////////
@@ -74,10 +75,18 @@ func setupWebsocket(c chan string) {
 var debug bool = true
 var emulate bool = true
 var sleepTime int = 1
-
 func changedState(state int, c chan string) {
+
+    type Device struct {
+        Identifier string
+        currentState int
+    }
+    var currentDevice = Device{"dev1", 0}
+
     id := strconv.FormatInt(insertStateIntoDatabase(state),10)
-    c <- (id)
+    if debug {fmt.Printf("ID is: %v\n", id)}
+    m, _ := json.Marshal(currentDevice)
+    c <- (string(m))
     if debug {fmt.Printf("TV Changed State to %v\n", state)}
 }
 
@@ -102,7 +111,7 @@ func main() {
 
     // Initial Startup tasks
     go setupWebsocket(c)
-    setupLocalDatabase()
+    go setupLocalDatabase()
 
     // Check the TV state every second
     for {
