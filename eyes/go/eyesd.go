@@ -9,7 +9,7 @@ import (
     "os"
     "math/rand"
     "net"
-    "strconv"
+//    "strconv"
     "encoding/json"
 )
 
@@ -21,13 +21,13 @@ import (
 
 var localDatabasePath string = "/tmp/eyes/eyesd.db"
 
-func insertStateIntoDatabase(state int) int64 {
+func insertStateIntoDatabase(state int, timeChanged int64) int64 {
     db, err := sql.Open("sqlite3", localDatabasePath)
     checkErr(err)
  
-    stmt, err := db.Prepare("INSERT INTO state (state) values(?)")
+    stmt, err := db.Prepare("INSERT INTO state (state, timestamp) values(?,?)")
     checkErr(err)
-    res, err := stmt.Exec(state)
+    res, err := stmt.Exec(state, timeChanged)
     checkErr(err)
 
     id, err := res.LastInsertId()
@@ -42,7 +42,7 @@ func setupLocalDatabase() {
     db, err := sql.Open("sqlite3", localDatabasePath)
     checkErr(err)
 
-    _, err = db.Exec("CREATE TABLE IF NOT EXISTS state (metricsID INTEGER PRIMARY KEY, timestamp TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, state INTEGER NOT NULL)")
+    _, err = db.Exec("CREATE TABLE IF NOT EXISTS state (metricsID INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL, state INTEGER NOT NULL)")
     checkErr(err)
     db.Close()
 }
@@ -77,17 +77,30 @@ var emulate bool = true
 var sleepTime int = 1
 func changedState(state int, c chan string) {
 
+    timeChanged := epochTime()
+    //id := strconv.FormatInt(insertStateIntoDatabase(state),10)
+    id := insertStateIntoDatabase(state, timeChanged)
+
+
     type Device struct {
         Identifier string
-        currentState int
+        CurrentState int
+        DatabaseID int64
+        CurrentTime int64
     }
-    var currentDevice = Device{"dev1", 0}
+    var currentDevice = Device{"dev1", state, id, timeChanged}
 
-    id := strconv.FormatInt(insertStateIntoDatabase(state),10)
     if debug {fmt.Printf("ID is: %v\n", id)}
-    m, _ := json.Marshal(currentDevice)
+    m, err := json.Marshal(currentDevice)
+    checkErr(err)
+
     c <- (string(m))
     if debug {fmt.Printf("TV Changed State to %v\n", state)}
+}
+
+func epochTime() int64 {
+    now := time.Now()
+    return now.Unix()
 }
 
 func checkErr(err error) {
@@ -103,6 +116,11 @@ func checkErr(err error) {
 /////////////////////////////////////////////////////////////
 
 func main() {
+
+    addrs, _ := net.Interfaces()
+    for i, addr := range addrs {
+            fmt.Printf("%d %v\n", i, addr)
+    }  
 
     if !emulate {cec.Open("", "cec.go")}
     previousState := 5
