@@ -9,7 +9,7 @@ import (
     "os"
     "math/rand"
     "net"
-//    "strconv"
+    "strings"
     "encoding/json"
 )
 
@@ -23,24 +23,20 @@ var localDatabasePath string = "/tmp/eyes/eyesd.db"
 
 func insertStateIntoDatabase(state int, timeChanged int64) int64 {
     db, err := sql.Open("sqlite3", localDatabasePath)
-    checkErr(err)
  
     stmt, err := db.Prepare("INSERT INTO state (state, timestamp) values(?,?)")
-    checkErr(err)
     res, err := stmt.Exec(state, timeChanged)
-    checkErr(err)
 
     id, err := res.LastInsertId()
-    checkErr(err)
     if debug {fmt.Printf("Database returned ID %v\n", id)}
     db.Close()
+    checkErr(err)
     return id
 }
 
 func setupLocalDatabase() {
     err := os.MkdirAll("/tmp/eyes",0755)
     db, err := sql.Open("sqlite3", localDatabasePath)
-    checkErr(err)
 
     _, err = db.Exec("CREATE TABLE IF NOT EXISTS state (metricsID INTEGER PRIMARY KEY, timestamp INTEGER NOT NULL, state INTEGER NOT NULL)")
     checkErr(err)
@@ -58,11 +54,11 @@ var remoteServerAddress string = "192.168.0.106"
 func setupWebsocket(c chan string) {
     if debug{fmt.Printf("Remote Server = %v\n",remoteServerAddress)}
     conn, err := net.Dial("tcp", "192.168.0.106:8080")
-    checkErr(err)
 
     for {
         fmt.Fprintf(conn, <-c)
     }
+    checkErr(err)
 }
 
 
@@ -75,32 +71,43 @@ func setupWebsocket(c chan string) {
 var debug bool = true
 var emulate bool = true
 var sleepTime int = 1
-func changedState(state int, c chan string) {
 
-    timeChanged := epochTime()
-    //id := strconv.FormatInt(insertStateIntoDatabase(state),10)
-    id := insertStateIntoDatabase(state, timeChanged)
+// Do I even need this struct?
+type Device struct {
+    Identifier string
+    CurrentState int
+    DatabaseID int64
+    CurrentTime int64
+}
 
+func changedState(state int, c chan string, timestamp int64) {
 
-    type Device struct {
-        Identifier string
-        CurrentState int
-        DatabaseID int64
-        CurrentTime int64
-    }
-    var currentDevice = Device{"dev1", state, id, timeChanged}
+    id := insertStateIntoDatabase(state, timestamp)
+    var currentDevice = Device{macAddress(), state, id, timestamp}
 
-    if debug {fmt.Printf("ID is: %v\n", id)}
-    m, err := json.Marshal(currentDevice)
-    checkErr(err)
-
-    c <- (string(m))
+    c <- (createJSON(currentDevice))
     if debug {fmt.Printf("TV Changed State to %v\n", state)}
 }
 
+// Return the current time in epoch format
 func epochTime() int64 {
     now := time.Now()
     return now.Unix()
+}
+
+// Return the MAC address of eth0
+func macAddress() string {
+    mac, err := net.InterfaceByName("eth0")
+    checkErr(err)
+    return strings.ToUpper(mac.HardwareAddr.String())
+}
+
+// Return Device formatted as a JSON string
+func createJSON(currentDevice Device) string {
+    m, err := json.Marshal(currentDevice)
+    if debug {fmt.Printf("JSON is: %v\n", string(m))}
+    checkErr(err)
+    return string(m)
 }
 
 func checkErr(err error) {
@@ -117,11 +124,6 @@ func checkErr(err error) {
 
 func main() {
 
-    addrs, _ := net.Interfaces()
-    for i, addr := range addrs {
-            fmt.Printf("%d %v\n", i, addr)
-    }  
-
     if !emulate {cec.Open("", "cec.go")}
     previousState := 5
     state := 0
@@ -137,7 +139,7 @@ func main() {
         if emulate {state = rand.Intn(2)}
         if debug {fmt.Printf("The TV is %v\n", state)}
         if state != previousState {
-            go changedState(state, c)
+            go changedState(state, c, epochTime())
         }
         previousState = state
         time.Sleep(1 * time.Second)
