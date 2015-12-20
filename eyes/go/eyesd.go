@@ -60,21 +60,38 @@ func setupWebsocket(outgoing chan string, incoming chan string) {
 
 // Send whatever is on the outgoing channel to the server
 func sendToServer(conn net.Conn, outgoing chan string) {
-    for {
-        fmt.Fprintf(conn, <-outgoing)
-    }
+    for { fmt.Fprintf(conn, <-outgoing) }
 }
-
 
 func receiveFromServer(conn net.Conn, incoming chan string) {
     buf := make([]byte, 4096)
     for {
-        n, err :=conn.Read(buf)
+        msg, err :=conn.Read(buf)
         checkErr(err)
-        msg := string(buf[0:n])
-//        incoming <- msg
-        fmt.Printf("received %v\n",msg)
+        go executeCommand(decodeJSON(buf[0:msg]))
     }
+}
+
+/////////////////////////////////////////////////////////////
+//
+// Command Functions and Variables
+//
+/////////////////////////////////////////////////////////////
+
+func executeCommand(currentCommand Command) {
+    if currentCommand.Enforced {
+        // Add to enforcement table
+    } else if !currentCommand.Enforced {
+        // Immediately execute command
+        if currentCommand.DesiredState == 0 {
+            if emulate {state = 0}
+            if !emulate {cec.PowerOn(0)}
+        } else if currentCommand.DesiredState == 1 {
+            if emulate {state = 1}
+            if !emulate {cec.Standby(0)}
+        }
+    } else { fmt.Println("Bad data from server") }
+
 }
 
 /////////////////////////////////////////////////////////////
@@ -86,6 +103,7 @@ func receiveFromServer(conn net.Conn, incoming chan string) {
 var debug bool = false
 var emulate bool = true
 var sleepTime int = 2
+var state int = 0
 
 // Do I even need this struct?
 type Device struct {
@@ -93,6 +111,13 @@ type Device struct {
     CurrentState int
     DatabaseID int64
     CurrentTime int64
+}
+
+type Command struct {
+    DesiredState int
+    Enforced bool
+    StartEnforce int64
+    EndEnforce int64
 }
 
 func changedState(state int, outgoing chan string, timestamp int64) {
@@ -115,6 +140,14 @@ func macAddress() string {
     mac, err := net.InterfaceByName("eth0")
     checkErr(err)
     return strings.ToUpper(mac.HardwareAddr.String())
+}
+
+func decodeJSON(b []byte) Command {
+        var m Command
+        err := json.Unmarshal(b, &m)
+        if debug {fmt.Printf("received %v from server.\n",m)}
+        checkErr(err)
+        return m
 }
 
 // Return Device formatted as a JSON string
@@ -141,7 +174,6 @@ func main() {
 
     if !emulate {cec.Open("", "cec.go")}
     previousState := 5
-    state := 0
     outgoing := make(chan string)
     incoming := make(chan string)
 

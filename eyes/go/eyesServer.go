@@ -11,7 +11,8 @@ import (
 type Command struct {
     DesiredState int
     Enforced bool
-    Expires int64
+    StartEnforce int64
+    EndEnforce int64
 }
 
 func printMessages(msgchan <-chan string) {
@@ -36,7 +37,7 @@ func epochTime() int64 {
 func sendCommand(conn net.Conn) {
     for {
         desiredState := rand.Intn(2)
-        var currentCommand = Command{desiredState, false, epochTime()}
+        var currentCommand = Command{desiredState, false, epochTime(), epochTime()+600}
         fmt.Fprintf(conn, createJSON(currentCommand))
         time.Sleep(5 * time.Second)
     }
