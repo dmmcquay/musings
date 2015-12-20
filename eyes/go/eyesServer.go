@@ -3,31 +3,61 @@ package main
 import (
     "net"
     "fmt"
+    "time"
+    "math/rand"
+    "encoding/json"
 )
+
+type Command struct {
+    DesiredState int
+    Enforced bool
+    Expires int64
+}
 
 func printMessages(msgchan <-chan string) {
     for {
         msg := <-msgchan
-        fmt.Printf("Database ID: %s\n", msg)
+        fmt.Printf("JSON received: %s\n", msg)
+    }
+}
+
+// Return Command formatted as a JSON string
+func createJSON(currentCommand Command) string {
+    m, _ := json.Marshal(currentCommand)
+    return string(m)
+}
+
+// Return the current time in epoch format
+func epochTime() int64 {
+    now := time.Now()
+    return now.Unix()
+}
+
+func sendCommand(conn net.Conn) {
+    for {
+        desiredState := rand.Intn(2)
+        var currentCommand = Command{desiredState, false, epochTime()}
+        fmt.Fprintf(conn, createJSON(currentCommand))
+        time.Sleep(5 * time.Second)
     }
 }
 
 func handleConnection(c net.Conn, msgchan chan<- string) {
-    fmt.Print("Connection")
     buf := make([]byte, 4096)
+    go sendCommand(c)
 
     for {
+        // Read from the socket connection and send to the channel
         n, err := c.Read(buf)
         if err != nil || n == 0 {
             c.Close()
             break
         }
         msgchan <- string(buf[0:n])
-        n, err = c.Write(buf[0:n])
-        if err != nil {
-            c.Close()
-            break
-        }
+
+        // Send back a random message
+        //fmt.Fprintf(c,"Sending random message")
+
     }
     fmt.Printf("Connection from %v closed.\n", c.RemoteAddr())
 }

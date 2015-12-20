@@ -51,16 +51,31 @@ func setupLocalDatabase() {
 
 var remoteServerAddress string = "192.168.0.106"
 
-func setupWebsocket(c chan string) {
-    if debug{fmt.Printf("Remote Server = %v\n",remoteServerAddress)}
+func setupWebsocket(outgoing chan string, incoming chan string) {
     conn, err := net.Dial("tcp", "192.168.0.106:8080")
-
-    for {
-        fmt.Fprintf(conn, <-c)
-    }
+    go sendToServer(conn, outgoing)
+    go receiveFromServer(conn, incoming)
     checkErr(err)
 }
 
+// Send whatever is on the outgoing channel to the server
+func sendToServer(conn net.Conn, outgoing chan string) {
+    for {
+        fmt.Fprintf(conn, <-outgoing)
+    }
+}
+
+
+func receiveFromServer(conn net.Conn, incoming chan string) {
+    buf := make([]byte, 4096)
+    for {
+        n, err :=conn.Read(buf)
+        checkErr(err)
+        msg := string(buf[0:n])
+//        incoming <- msg
+        fmt.Printf("received %v\n",msg)
+    }
+}
 
 /////////////////////////////////////////////////////////////
 //
@@ -68,9 +83,9 @@ func setupWebsocket(c chan string) {
 //
 /////////////////////////////////////////////////////////////
 
-var debug bool = true
+var debug bool = false
 var emulate bool = true
-var sleepTime int = 1
+var sleepTime int = 2
 
 // Do I even need this struct?
 type Device struct {
@@ -80,12 +95,12 @@ type Device struct {
     CurrentTime int64
 }
 
-func changedState(state int, c chan string, timestamp int64) {
+func changedState(state int, outgoing chan string, timestamp int64) {
 
     id := insertStateIntoDatabase(state, timestamp)
     var currentDevice = Device{macAddress(), state, id, timestamp}
 
-    c <- (createJSON(currentDevice))
+    outgoing <- (createJSON(currentDevice))
     if debug {fmt.Printf("TV Changed State to %v\n", state)}
 }
 
@@ -127,10 +142,11 @@ func main() {
     if !emulate {cec.Open("", "cec.go")}
     previousState := 5
     state := 0
-    c := make(chan string)
+    outgoing := make(chan string)
+    incoming := make(chan string)
 
     // Initial Startup tasks
-    go setupWebsocket(c)
+    go setupWebsocket(outgoing, incoming)
     go setupLocalDatabase()
 
     // Check the TV state every second
@@ -139,7 +155,7 @@ func main() {
         if emulate {state = rand.Intn(2)}
         if debug {fmt.Printf("The TV is %v\n", state)}
         if state != previousState {
-            go changedState(state, c, epochTime())
+            go changedState(state, outgoing, epochTime())
         }
         previousState = state
         time.Sleep(1 * time.Second)
